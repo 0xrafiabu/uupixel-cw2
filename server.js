@@ -21,6 +21,21 @@ const upload = multer({ storage: multer.memoryStorage() });
 const usersFile = path.join(__dirname, "data", "users.json");
 const photosFile = path.join(__dirname, "data", "photos.json");
 
+// Ensure data directory exists (Azure fix)
+const dataDir = path.join(__dirname, "data");
+
+if (!fs.existsSync(dataDir)) {
+    fs.mkdirSync(dataDir);
+}
+
+if (!fs.existsSync(usersFile)) {
+    fs.writeFileSync(usersFile, "{}");
+}
+
+if (!fs.existsSync(photosFile)) {
+    fs.writeFileSync(photosFile, "[]");
+}
+
 function readUsers() {
     try {
         return JSON.parse(fs.readFileSync(usersFile, "utf8"));
