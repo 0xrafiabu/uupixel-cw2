@@ -1,4 +1,4 @@
-const API_BASE = "http://localhost:3000";
+const API_BASE = "https://uupixel-api-rafi-fffcgtbfcsjeqhb.francecentral-01.azurewebsites.net";
 
 let isSignUp = false;
 let currentUser = localStorage.getItem("currentUser");
@@ -55,9 +55,7 @@ async function authenticate() {
 
             const registerRes = await fetch(API_BASE + "/users/register", {
                 method: "POST",
-                headers: {
-                    "Content-Type": "application/json"
-                },
+                headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ fullName, email, password })
             });
 
@@ -82,9 +80,7 @@ async function authenticate() {
 
         const loginRes = await fetch(API_BASE + "/users/login", {
             method: "POST",
-            headers: {
-                "Content-Type": "application/json"
-            },
+            headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ email, password })
         });
 
@@ -113,7 +109,9 @@ function showApp() {
 function showSection(name) {
     document.querySelectorAll("section").forEach(s => s.classList.remove("active"));
     document.getElementById(name + "-section").classList.add("active");
+
     if (name === "profile") loadProfile();
+    if (name === "home") loadGallery();
 }
 
 async function uploadPhoto() {
@@ -122,6 +120,8 @@ async function uploadPhoto() {
     const file = fileInput.files[0];
     const category = categoryInput.value.trim();
     const error = document.getElementById("upload-error");
+
+    error.innerText = "";
 
     if (!file || !file.type.includes("jpeg")) {
         error.innerText = "JPEG only.";
@@ -155,7 +155,6 @@ async function uploadPhoto() {
         categoryInput.value = "";
         error.innerText = "Upload successful.";
         showSection("home");
-        loadGallery();
     } catch (err) {
         error.innerText = "Server error.";
     }
@@ -167,6 +166,7 @@ async function loadGallery(filterCategory = "") {
 
     try {
         let url = API_BASE + "/photos";
+
         if (filterCategory) {
             url += "?category=" + encodeURIComponent(filterCategory);
         }
@@ -194,13 +194,14 @@ async function loadGallery(filterCategory = "") {
                 <img src="${photo.imageUrl}" alt="Uploaded photo">
                 <p class="meta">Category: ${photo.category}</p>
                 <p class="meta">Size: ${photo.size}</p>
-                <p class="meta">By ${photo.email}</p>
+                <p class="meta">By ${photo.fullName || photo.email}</p>
                 <div class="actions">
                     <button onclick="likePhoto('${photo.id}')">❤️ ${photo.likes}</button>
                     <button onclick="downloadPhoto('${photo.id}', '${photo.imageUrl}')">⬇ ${photo.downloads}</button>
                     ${ownerButtons}
                 </div>
             `;
+
             gallery.appendChild(card);
         });
     } catch (err) {
@@ -217,6 +218,7 @@ async function likePhoto(photoId) {
     await fetch(API_BASE + "/photos/" + photoId + "/like", {
         method: "POST"
     });
+
     loadGallery();
 }
 
@@ -235,6 +237,7 @@ async function downloadPhoto(photoId, imageUrl) {
 
 async function editPhoto(photoId) {
     const newCategory = prompt("Enter new category:");
+
     if (newCategory === null) return;
 
     if (newCategory.trim() === "") {
@@ -244,9 +247,7 @@ async function editPhoto(photoId) {
 
     await fetch(API_BASE + "/photos/" + photoId, {
         method: "PUT",
-        headers: {
-            "Content-Type": "application/json"
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ category: newCategory.trim() })
     });
 
@@ -255,6 +256,7 @@ async function editPhoto(photoId) {
 
 async function deletePhoto(photoId) {
     const confirmDelete = confirm("Are you sure you want to delete this photo?");
+
     if (!confirmDelete) return;
 
     await fetch(API_BASE + "/photos/" + photoId, {
@@ -266,7 +268,10 @@ async function deletePhoto(photoId) {
 
 async function loadProfile() {
     try {
-        const res = await fetch(API_BASE + "/users/profile?email=" + encodeURIComponent(currentUser));
+        const res = await fetch(
+            API_BASE + "/users/profile?email=" + encodeURIComponent(currentUser)
+        );
+
         const user = await res.json();
 
         document.getElementById("profile-email").innerText =
