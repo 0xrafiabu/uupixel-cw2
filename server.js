@@ -5,24 +5,17 @@ const fs = require("fs");
 const path = require("path");
 
 const app = express();
+const rootDir = __dirname;
+const dataDir = path.join(rootDir, "data");
 
 app.use(cors());
 app.use(express.json({ limit: "20mb" }));
-
-// Serve frontend files
-app.use(express.static(path.join(__dirname)));
-
-// Homepage route
-app.get("/", (req, res) => {
-    res.sendFile(path.join(__dirname, "index.html"));
-});
+app.use(express.urlencoded({ extended: true, limit: "20mb" }));
 
 // Upload setup
 const upload = multer({ storage: multer.memoryStorage() });
 
 // Azure-safe data folder
-const dataDir = path.join(__dirname, "data");
-
 if (!fs.existsSync(dataDir)) {
     fs.mkdirSync(dataDir, { recursive: true });
 }
@@ -93,7 +86,6 @@ app.post("/users/register", (req, res) => {
         res.json({
             message: "User registered successfully."
         });
-
     } catch (err) {
         console.error("Register error:", err);
         res.status(500).json({
@@ -104,13 +96,10 @@ app.post("/users/register", (req, res) => {
 
 // LOGIN
 app.post("/users/login", (req, res) => {
-
     const { email, password } = req.body;
     const users = readUsers();
 
-    if (!users[email] ||
-        users[email].password !== password) {
-
+    if (!users[email] || users[email].password !== password) {
         return res.status(401).json({
             message: "Invalid credentials."
         });
@@ -123,15 +112,13 @@ app.post("/users/login", (req, res) => {
 
 // GET PHOTOS
 app.get("/photos", (req, res) => {
-
     let photos = readPhotos();
     const { category } = req.query;
 
     if (category) {
         photos = photos.filter(photo =>
-            photo.category
-            .toLowerCase()
-            .includes(category.toLowerCase())
+            photo.category &&
+            photo.category.toLowerCase().includes(category.toLowerCase())
         );
     }
 
@@ -139,12 +126,8 @@ app.get("/photos", (req, res) => {
 });
 
 // UPLOAD PHOTO
-app.post("/photos",
-    upload.single("photo"),
-    (req, res) => {
-
+app.post("/photos", upload.single("photo"), (req, res) => {
     try {
-
         const { category, email } = req.body;
 
         if (!req.file) {
@@ -169,32 +152,34 @@ app.post("/photos",
             email,
             fullName: users[email].fullName,
             category,
-            size:
-              (req.file.size / 1024)
-              .toFixed(1) + " KB",
+            size: `${(req.file.size / 1024).toFixed(1)} KB`,
             likes: 0,
             downloads: 0,
-            imageUrl:
-            `data:${req.file.mimetype};base64,${req.file.buffer.toString("base64")}`
+            imageUrl: `data:${req.file.mimetype};base64,${req.file.buffer.toString("base64")}`
         };
 
         photos.push(newPhoto);
         savePhotos(photos);
 
         res.json({
-            message:
-            "Photo uploaded successfully.",
+            message: "Photo uploaded successfully.",
             photo: newPhoto
         });
-
     } catch (err) {
-
         console.error("Upload error:", err);
-
         res.status(500).json({
             message: "Upload error."
         });
     }
+});
+
+// Serve files that live in the project root, such as /script.js and /style.css.
+// index.html is served by the explicit "/" route below.
+app.use(express.static(rootDir, { index: false }));
+
+// Homepage route
+app.get("/", (req, res) => {
+    res.sendFile(path.join(rootDir, "index.html"));
 });
 
 // START SERVER
