@@ -207,10 +207,14 @@ app.get("/users/profile", async (req, res) => {
 
         const user = userResult.recordset[0];
 
-        // Get photos
-        const photos = readPhotos().filter(
-            photo => normalizeEmail(photo.email) === email
-        );
+        const photoResult = await pool.request()
+            .input("email", sql.NVarChar, email)
+            .query(`
+                SELECT * FROM photos
+                WHERE email = @email
+            `);
+
+        const photos = photoResult.recordset;
 
         const likes = photos.reduce(
             (total, photo) => total + Number(photo.likes || 0),
