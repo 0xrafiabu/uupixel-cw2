@@ -129,33 +129,53 @@ app.post("/users/register", async (req, res) => {
     }
 });
 
-app.post("/users/login", (req, res) => {
+app.post("/users/login", async (req, res) => {
     try {
-        const email = normalizeEmail(req.body.email);
-        const password = String(req.body.password || "");
+        const { email, password } = req.body;
 
         if (!email || !password) {
-            return res.status(400).json({ message: "Email and password are required." });
+            return res.status(400).json({
+                message: "Email and password are required."
+            });
         }
 
-        const users = readUsers();
-        const user = users[email];
+        await poolConnect;
 
-        if (!user || user.password !== password) {
-            return res.status(401).json({ message: "Invalid credentials." });
+        const result = await pool.request()
+            .input("email", sql.NVarChar, email)
+            .query(`
+                SELECT * FROM users
+                WHERE email = @email
+            `);
+
+        if (result.recordset.length === 0) {
+            return res.status(401).json({
+                message: "Invalid credentials."
+            });
         }
 
-        return res.json({
+        const user = result.recordset[0];
+
+        if (user.password !== password) {
+            return res.status(401).json({
+                message: "Invalid credentials."
+            });
+        }
+
+        res.json({
             message: "Login successful.",
             user: {
-                fullName: user.fullName,
-                email: user.email,
-                profilePicUrl: user.profilePicUrl || ""
+                fullName: user.username,
+                email: user.email
             }
         });
+
     } catch (err) {
-        console.error("Login error:", err);
-        return res.status(500).json({ message: "Login failed." });
+        console.error(err);
+
+        res.status(500).json({
+            message: "Login failed."
+        });
     }
 });
 
