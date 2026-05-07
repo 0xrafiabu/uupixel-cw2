@@ -364,32 +364,47 @@ app.put("/photos/:id", (req, res) => {
     }
 });
 
-app.delete("/photos/:id", (req, res) => {
+app.delete("/photos/:id", async (req, res) => {
     try {
-        const email = normalizeEmail(req.body.email || req.query.email);
+        const photoId = req.params.id;
 
-        if (!email) {
-            return res.status(400).json({ message: "Email is required." });
-        }
+        let photos = readPhotos();
 
-        const photos = readPhotos();
-        const photo = findPhoto(photos, req.params.id);
+        const photo = photos.find(p => p.id === photoId);
 
         if (!photo) {
-            return res.status(404).json({ message: "Photo not found." });
+            return res.status(404).json({
+                message: "Photo not found."
+            });
         }
 
-        if (normalizeEmail(photo.email) !== email) {
-            return res.status(403).json({ message: "Only the owner can delete this photo." });
-        }
+        // Extract blob filename from URL
+        const imageUrl = photo.imageUrl;
 
-        const remainingPhotos = photos.filter(item => String(item.id) !== String(req.params.id));
-        savePhotos(remainingPhotos);
+        const blobName = imageUrl.split("/").pop();
 
-        return res.json({ message: "Photo deleted.", id: req.params.id });
+        // Get blob client
+        const blockBlobClient =
+            containerClient.getBlockBlobClient(blobName);
+
+        // Delete blob from Azure Storage
+        await blockBlobClient.deleteIfExists();
+
+        // Remove photo from JSON
+        photos = photos.filter(p => p.id !== photoId);
+
+        savePhotos(photos);
+
+        res.json({
+            message: "Photo deleted successfully."
+        });
+
     } catch (err) {
-        console.error("Delete photo error:", err);
-        return res.status(500).json({ message: "Photo delete failed." });
+        console.error(err);
+
+        res.status(500).json({
+            message: "Delete failed."
+        });
     }
 });
 
