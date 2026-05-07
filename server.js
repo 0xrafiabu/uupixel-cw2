@@ -4,6 +4,7 @@ const multer = require("multer");
 const fs = require("fs");
 const path = require("path");
 const { BlobServiceClient } = require("@azure/storage-blob");
+const { sql, pool, poolConnect } = require("./config/db");
 
 const app = express();
 const rootDir = __dirname;
@@ -82,34 +83,49 @@ function findPhoto(photos, id) {
 
 ensureDataFiles();
 
-app.post("/users/register", (req, res) => {
+app.post("/users/register", async (req, res) => {
     try {
-        const fullName = String(req.body.fullName || "").trim();
-        const email = normalizeEmail(req.body.email);
-        const password = String(req.body.password || "");
+        const { fullName, email, password } = req.body;
 
         if (!fullName || !email || !password) {
-            return res.status(400).json({ message: "Full name, email and password are required." });
+            return res.status(400).json({
+                message: "All fields are required."
+            });
         }
 
-        const users = readUsers();
+        await poolConnect;
 
-        if (users[email]) {
-            return res.status(409).json({ message: "User already exists." });
+        // Check existing user
+        const existingUser = await pool.request()
+            .input("email", sql.NVarChar, email)
+            .query("SELECT * FROM users WHERE email = @email");
+
+        if (existingUser.recordset.length > 0) {
+            return res.status(400).json({
+                message: "User already exists."
+            });
         }
 
-        users[email] = {
-            fullName,
-            email,
-            password,
-            profilePicUrl: ""
-        };
+        // Insert user
+        await pool.request()
+            .input("username", sql.NVarChar, fullName)
+            .input("email", sql.NVarChar, email)
+            .input("password", sql.NVarChar, password)
+            .query(`
+                INSERT INTO users (username, email, password)
+                VALUES (@username, @email, @password)
+            `);
 
-        saveUsers(users);
-        return res.status(201).json({ message: "User registered successfully.", user: { fullName, email } });
+        res.json({
+            message: "User registered successfully."
+        });
+
     } catch (err) {
-        console.error("Register error:", err);
-        return res.status(500).json({ message: "Registration failed." });
+        console.error(err);
+
+        res.status(500).json({
+            message: "Registration failed."
+        });
     }
 });
 
