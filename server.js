@@ -179,36 +179,64 @@ app.post("/users/login", async (req, res) => {
     }
 });
 
-app.get("/users/profile", (req, res) => {
+app.get("/users/profile", async (req, res) => {
     try {
         const email = normalizeEmail(req.query.email);
 
         if (!email) {
-            return res.status(400).json({ message: "Email is required." });
+            return res.status(400).json({
+                message: "Email is required."
+            });
         }
 
-        const users = readUsers();
-        const user = users[email];
+        await poolConnect;
 
-        if (!user) {
-            return res.status(404).json({ message: "User not found." });
+        // Get user from SQL
+        const userResult = await pool.request()
+            .input("email", sql.NVarChar, email)
+            .query(`
+                SELECT * FROM users
+                WHERE email = @email
+            `);
+
+        if (userResult.recordset.length === 0) {
+            return res.status(404).json({
+                message: "User not found."
+            });
         }
 
-        const userPhotos = readPhotos().filter(photo => normalizeEmail(photo.email) === email);
-        const likes = userPhotos.reduce((total, photo) => total + Number(photo.likes || 0), 0);
-        const downloads = userPhotos.reduce((total, photo) => total + Number(photo.downloads || 0), 0);
+        const user = userResult.recordset[0];
 
-        return res.json({
+        // Get photos
+        const photos = readPhotos().filter(
+            photo => normalizeEmail(photo.email) === email
+        );
+
+        const likes = photos.reduce(
+            (total, photo) => total + Number(photo.likes || 0),
+            0
+        );
+
+        const downloads = photos.reduce(
+            (total, photo) => total + Number(photo.downloads || 0),
+            0
+        );
+
+        res.json({
             email: user.email,
-            fullName: user.fullName,
+            fullName: user.username,
             profilePicUrl: user.profilePicUrl || "",
-            uploads: userPhotos.length,
+            uploads: photos.length,
             likes,
             downloads
         });
+
     } catch (err) {
-        console.error("Profile error:", err);
-        return res.status(500).json({ message: "Profile failed to load." });
+        console.error(err);
+
+        res.status(500).json({
+            message: "Profile failed to load."
+        });
     }
 });
 
