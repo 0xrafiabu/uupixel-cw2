@@ -289,21 +289,41 @@ app.post("/users/profile-picture", upload.single("profilePic"), async (req, res)
     }
 });
 
-app.get("/photos", (req, res) => {
+app.get("/photos", async (req, res) => {
     try {
-        const category = String(req.query.category || "").trim().toLowerCase();
-        let photos = readPhotos();
+        const category =
+            String(req.query.category || "")
+                .trim()
+                .toLowerCase();
+
+        await poolConnect;
+
+        let query = `
+            SELECT * FROM photos
+        `;
 
         if (category) {
-            photos = photos.filter(photo =>
-                String(photo.category || "").toLowerCase().includes(category)
-            );
+            query += `
+                WHERE LOWER(category) LIKE '%' + @category + '%'
+            `;
         }
 
-        return res.json(photos);
+        const request = pool.request();
+
+        if (category) {
+            request.input("category", sql.NVarChar, category);
+        }
+
+        const result = await request.query(query);
+
+        return res.json(result.recordset);
+
     } catch (err) {
         console.error("Get photos error:", err);
-        return res.status(500).json({ message: "Photos failed to load." });
+
+        return res.status(500).json({
+            message: "Photos failed to load."
+        });
     }
 });
 
