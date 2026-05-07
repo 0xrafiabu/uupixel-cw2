@@ -484,33 +484,59 @@ app.post("/photos/:id/download", async (req, res) => {
     }
 });
 
-app.put("/photos/:id", (req, res) => {
+app.put("/photos/:id", async (req, res) => {
     try {
         const email = normalizeEmail(req.body.email);
         const category = String(req.body.category || "").trim();
 
         if (!email || !category) {
-            return res.status(400).json({ message: "Email and category are required." });
+            return res.status(400).json({
+                message: "Email and category are required."
+            });
         }
 
-        const photos = readPhotos();
-        const photo = findPhoto(photos, req.params.id);
+        await poolConnect;
 
-        if (!photo) {
-            return res.status(404).json({ message: "Photo not found." });
+        const photoResult = await pool.request()
+            .input("id", sql.NVarChar, req.params.id)
+            .query(`
+                SELECT * FROM photos
+                WHERE id = @id
+            `);
+
+        if (photoResult.recordset.length === 0) {
+            return res.status(404).json({
+                message: "Photo not found."
+            });
         }
+
+        const photo = photoResult.recordset[0];
 
         if (normalizeEmail(photo.email) !== email) {
-            return res.status(403).json({ message: "Only the owner can edit this photo." });
+            return res.status(403).json({
+                message: "Only the owner can edit this photo."
+            });
         }
 
-        photo.category = category;
-        savePhotos(photos);
+        await pool.request()
+            .input("id", sql.NVarChar, req.params.id)
+            .input("category", sql.NVarChar, category)
+            .query(`
+                UPDATE photos
+                SET category = @category
+                WHERE id = @id
+            `);
 
-        return res.json({ message: "Photo updated.", photo });
+        res.json({
+            message: "Photo updated."
+        });
+
     } catch (err) {
         console.error("Edit photo error:", err);
-        return res.status(500).json({ message: "Photo update failed." });
+
+        res.status(500).json({
+            message: "Photo update failed."
+        });
     }
 });
 
@@ -518,32 +544,40 @@ app.delete("/photos/:id", async (req, res) => {
     try {
         const photoId = req.params.id;
 
-        let photos = readPhotos();
+        await poolConnect;
 
-        const photo = photos.find(p => p.id === photoId);
+        const result = await pool.request()
+            .input("id", sql.NVarChar, photoId)
+            .query(`
+                SELECT * FROM photos
+                WHERE id = @id
+            `);
 
-        if (!photo) {
+        if (result.recordset.length === 0) {
             return res.status(404).json({
                 message: "Photo not found."
             });
         }
 
-        // Extract blob filename from URL
-        const imageUrl = photo.imageUrl;
+        const photo = result.recordset[0];
 
-        const blobName = imageUrl.split("/").pop();
+        // Extract blob name
+        const blobName =
+            photo.imageUrl.split("/").pop();
 
-        // Get blob client
         const blockBlobClient =
             containerClient.getBlockBlobClient(blobName);
 
-        // Delete blob from Azure Storage
+        // Delete image from Blob Storage
         await blockBlobClient.deleteIfExists();
 
-        // Remove photo from JSON
-        photos = photos.filter(p => p.id !== photoId);
-
-        savePhotos(photos);
+        // Delete metadata from SQL
+        await pool.request()
+            .input("id", sql.NVarChar, photoId)
+            .query(`
+                DELETE FROM photos
+                WHERE id = @id
+            `);
 
         res.json({
             message: "Photo deleted successfully."
