@@ -418,41 +418,69 @@ app.post("/photos", upload.single("photo"), async (req, res) => {
     }
 });
 
-app.post("/photos/:id/like", (req, res) => {
+app.post("/photos/:id/like", async (req, res) => {
     try {
-        const photos = readPhotos();
-        const photo = findPhoto(photos, req.params.id);
+        await poolConnect;
 
-        if (!photo) {
-            return res.status(404).json({ message: "Photo not found." });
+        const photoId = req.params.id;
+
+        const result = await pool.request()
+            .input("id", sql.NVarChar, photoId)
+            .query(`
+                UPDATE photos
+                SET likes = likes + 1
+                WHERE id = @id
+            `);
+
+        if (result.rowsAffected[0] === 0) {
+            return res.status(404).json({
+                message: "Photo not found."
+            });
         }
 
-        photo.likes = Number(photo.likes || 0) + 1;
-        savePhotos(photos);
+        res.json({
+            message: "Photo liked."
+        });
 
-        return res.json({ message: "Photo liked.", photo });
     } catch (err) {
         console.error("Like photo error:", err);
-        return res.status(500).json({ message: "Like failed." });
+
+        res.status(500).json({
+            message: "Like failed."
+        });
     }
 });
 
-app.post("/photos/:id/download", (req, res) => {
+app.post("/photos/:id/download", async (req, res) => {
     try {
-        const photos = readPhotos();
-        const photo = findPhoto(photos, req.params.id);
+        await poolConnect;
 
-        if (!photo) {
-            return res.status(404).json({ message: "Photo not found." });
+        const photoId = req.params.id;
+
+        const result = await pool.request()
+            .input("id", sql.NVarChar, photoId)
+            .query(`
+                UPDATE photos
+                SET downloads = downloads + 1
+                WHERE id = @id
+            `);
+
+        if (result.rowsAffected[0] === 0) {
+            return res.status(404).json({
+                message: "Photo not found."
+            });
         }
 
-        photo.downloads = Number(photo.downloads || 0) + 1;
-        savePhotos(photos);
+        res.json({
+            message: "Download recorded."
+        });
 
-        return res.json({ message: "Download recorded.", photo });
     } catch (err) {
         console.error("Download photo error:", err);
-        return res.status(500).json({ message: "Download failed." });
+
+        res.status(500).json({
+            message: "Download failed."
+        });
     }
 });
 
