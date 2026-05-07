@@ -240,7 +240,7 @@ app.get("/users/profile", async (req, res) => {
     }
 });
 
-app.post("/users/profile-picture", upload.single("profilePic"), (req, res) => {
+app.post("/users/profile-picture", upload.single("profilePic"), async (req, res) => {
     try {
         const email = normalizeEmail(req.body.email);
 
@@ -256,17 +256,33 @@ app.post("/users/profile-picture", upload.single("profilePic"), (req, res) => {
             return res.status(400).json({ message: "Only JPEG images are supported." });
         }
 
-        const users = readUsers();
-        const user = users[email];
+        await poolConnect;
 
-        if (!user) {
-            return res.status(404).json({ message: "User not found." });
+        const result = await pool.request()
+            .input("email", sql.NVarChar, email)
+            .query(`
+                SELECT * FROM users
+                WHERE email = @email
+            `);
+
+        if (result.recordset.length === 0) {
+            return res.status(404).json({
+                message: "User not found."
+            });
         }
 
-        user.profilePicUrl = `data:${req.file.mimetype};base64,${req.file.buffer.toString("base64")}`;
-        saveUsers(users);
+        const profilePicUrl = `data:${req.file.mimetype};base64,${req.file.buffer.toString("base64")}`;
 
-        return res.json({ message: "Profile picture updated.", profilePicUrl: user.profilePicUrl });
+        await pool.request()
+            .input("email", sql.NVarChar, email)
+            .input("profilePicUrl", sql.NVarChar, profilePicUrl)
+            .query(`
+                UPDATE users
+                SET profilePicUrl = @profilePicUrl
+                WHERE email = @email
+            `);
+
+        return res.json({ message: "Profile picture updated.", profilePicUrl });
     } catch (err) {
         console.error("Profile picture error:", err);
         return res.status(500).json({ message: "Profile picture update failed." });
@@ -305,12 +321,24 @@ app.post("/photos", upload.single("photo"), async (req, res) => {
             });
         }
 
-        const users = readUsers();
         const photos = readPhotos();
 
-        if (!users[email]) {
-            return res.status(404).json({ message: "User not found." });
+        await poolConnect;
+
+        const userResult = await pool.request()
+            .input("email", sql.NVarChar, email)
+            .query(`
+                SELECT * FROM users
+                WHERE email = @email
+            `);
+
+        if (userResult.recordset.length === 0) {
+            return res.status(404).json({
+                message: "User not found."
+            });
         }
+
+        const user = userResult.recordset[0];
 
         const id = Date.now().toString();
 
@@ -334,7 +362,7 @@ app.post("/photos", upload.single("photo"), async (req, res) => {
         const newPhoto = {
             id,
             email,
-            fullName: users[email].fullName,
+            fullName: user.username,
             category,
             size: (req.file.size / 1024).toFixed(1) + " KB",
             likes: 0,
