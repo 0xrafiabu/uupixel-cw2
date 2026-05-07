@@ -3,6 +3,7 @@ const cors = require("cors");
 const multer = require("multer");
 const fs = require("fs");
 const path = require("path");
+const { BlobServiceClient } = require("@azure/storage-blob");
 
 const app = express();
 const rootDir = __dirname;
@@ -10,6 +11,14 @@ const dataDir = path.join(rootDir, "data");
 const usersFile = path.join(dataDir, "users.json");
 const photosFile = path.join(dataDir, "photos.json");
 const upload = multer({ storage: multer.memoryStorage() });
+const connectionString = process.env.AZURE_STORAGE_CONNECTION_STRING;
+const containerName = process.env.AZURE_STORAGE_CONTAINER;
+
+const blobServiceClient =
+    BlobServiceClient.fromConnectionString(connectionString);
+
+const containerClient =
+    blobServiceClient.getContainerClient(containerName);
 
 app.use(cors());
 app.use(express.json({ limit: "30mb" }));
@@ -218,50 +227,72 @@ app.get("/photos", (req, res) => {
     }
 });
 
-app.post("/photos", upload.single("photo"), (req, res) => {
+app.post("/photos", upload.single("photo"), async (req, res) => {
     try {
-        const email = normalizeEmail(req.body.email);
-        const category = String(req.body.category || "").trim();
-
-        if (!email || !category) {
-            return res.status(400).json({ message: "Email and category are required." });
-        }
+        const { category, email } = req.body;
 
         if (!req.file) {
-            return res.status(400).json({ message: "Photo file is required." });
+            return res.status(400).json({ message: "Photo is required." });
         }
 
-        if (req.file.mimetype !== "image/jpeg") {
-            return res.status(400).json({ message: "Only JPEG uploads are supported." });
+        if (!category || !email) {
+            return res.status(400).json({
+                message: "Category and email are required."
+            });
         }
 
         const users = readUsers();
-        const user = users[email];
+        const photos = readPhotos();
 
-        if (!user) {
+        if (!users[email]) {
             return res.status(404).json({ message: "User not found." });
         }
 
-        const photos = readPhotos();
+        const id = Date.now().toString();
+
+        // unique blob name
+        const blobName = `${id}-${req.file.originalname}`;
+
+        // blob client
+        const blockBlobClient =
+            containerClient.getBlockBlobClient(blobName);
+
+        // upload to Azure Blob
+        await blockBlobClient.uploadData(req.file.buffer, {
+            blobHTTPHeaders: {
+                blobContentType: req.file.mimetype
+            }
+        });
+
+        // Azure blob URL
+        const imageUrl = blockBlobClient.url;
+
         const newPhoto = {
-            id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+            id,
             email,
-            fullName: user.fullName,
+            fullName: users[email].fullName,
             category,
-            size: `${(req.file.size / 1024).toFixed(1)} KB`,
+            size: (req.file.size / 1024).toFixed(1) + " KB",
             likes: 0,
             downloads: 0,
-            imageUrl: `data:${req.file.mimetype};base64,${req.file.buffer.toString("base64")}`,
-            createdAt: new Date().toISOString()
+            imageUrl
         };
 
-        photos.unshift(newPhoto);
+        photos.push(newPhoto);
+
         savePhotos(photos);
 
-        return res.status(201).json({ message: "Photo uploaded successfully.", photo: newPhoto });
+        res.json({
+            message: "Photo uploaded successfully.",
+            photo: newPhoto
+        });
+
     } catch (err) {
-        console.error("Upload photo error:", err);
-        return res.status(500).json({ message: "Photo upload failed." });
+        console.error(err);
+
+        res.status(500).json({
+            message: "Upload failed."
+        });
     }
 });
 
