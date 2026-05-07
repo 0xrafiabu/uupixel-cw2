@@ -341,8 +341,6 @@ app.post("/photos", upload.single("photo"), async (req, res) => {
             });
         }
 
-        const photos = readPhotos();
-
         await poolConnect;
 
         const userResult = await pool.request()
@@ -390,9 +388,21 @@ app.post("/photos", upload.single("photo"), async (req, res) => {
             imageUrl
         };
 
-        photos.push(newPhoto);
-
-        savePhotos(photos);
+        await pool.request()
+            .input("id", sql.NVarChar, id)
+            .input("email", sql.NVarChar, email)
+            .input("fullName", sql.NVarChar, user.username)
+            .input("category", sql.NVarChar, category)
+            .input("size", sql.NVarChar, newPhoto.size)
+            .input("likes", sql.Int, 0)
+            .input("downloads", sql.Int, 0)
+            .input("imageUrl", sql.NVarChar, imageUrl)
+            .query(`
+                INSERT INTO photos
+                (id, email, fullName, category, size, likes, downloads, imageUrl)
+                VALUES
+                (@id, @email, @fullName, @category, @size, @likes, @downloads, @imageUrl)
+            `);
 
         res.json({
             message: "Photo uploaded successfully.",
